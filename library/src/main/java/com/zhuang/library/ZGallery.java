@@ -1,25 +1,24 @@
 package com.zhuang.library;
 
 import android.annotation.TargetApi;
-import android.app.ActivityOptions;
 import android.content.ContentResolver;
 import android.content.Context;
-import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.MediaStore;
 import android.util.AttributeSet;
 import android.util.Log;
-import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AdapterView;
 import android.widget.BaseAdapter;
+import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.GridView;
 import android.widget.ImageView;
-import android.widget.PopupWindow;
+import android.widget.RadioGroup;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,8 +32,8 @@ public class ZGallery extends GridView {
     private Boolean takePhoto = true;
     private int mImageThumbSize;
     private int mImageThumbSpacing;
-    private ArrayList<String> imageList;
-    private ArrayList<String> selectImagePathList = new ArrayList<String>();//已选择的图片路径
+    private ArrayList<ImageModel> imageList;//系统图片
+    private ArrayList<ImageModel> selectImageList = new ArrayList<ImageModel>();//已选择的图片
 
 
     public ZGallery(Context context) {
@@ -62,30 +61,16 @@ public class ZGallery extends GridView {
         setStretchMode(STRETCH_COLUMN_WIDTH);
         setHorizontalSpacing(mImageThumbSpacing);
         setVerticalSpacing(mImageThumbSpacing);
-        imageList = getImages();
+        ArrayList<ImageModel> imageList = getImageList();
         setAdapter(new Adapter(context, imageList));
-        setOnItemClickListener(new OnItemClickListener() {
-            @Override
-            public void onItemClick(AdapterView<?> adapterView, View v, int i, long l) {
-                Intent intent = new Intent(mContext, ImageDetailActivity.class);
-                intent.putStringArrayListExtra("imageList", imageList);
-                intent.putExtra("position", i);
-                if (Utils.hasJellyBean()) {
-                    // makeThumbnailScaleUpAnimation() looks kind of ugly here as the loading spinner may
-                    // show plus the thumbnail image in GridView is cropped. so using
-                    // makeScaleUpAnimation() instead.
-                    ActivityOptions options =
-                            ActivityOptions.makeScaleUpAnimation(v, 0, 0, v.getWidth(), v.getHeight());
-                    mContext.startActivity(intent, options.toBundle());
-                } else {
-                    mContext.startActivity(intent);
-                }
-            }
-        });
     }
 
-    private ArrayList<String> getImages() {
-        ArrayList<String> list = new ArrayList<String>();
+    /**
+     * 获取系统相册图片
+     * @return
+     */
+    private ArrayList<ImageModel> getLocalImagesPath() {
+        ArrayList<ImageModel> list = new ArrayList<ImageModel>();
 
         ContentResolver contentResolver = mContext.getContentResolver();
         Uri uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
@@ -94,9 +79,12 @@ public class ZGallery extends GridView {
         Cursor cursor = contentResolver.query(uri, projection, null, null, sortOrder);
         int iRemote = cursor.getColumnIndex(MediaStore.Images.Media.DATA);
         cursor.moveToFirst();
+        int i = 0;
         while (!cursor.isAfterLast()) {
             String remote = cursor.getString(iRemote);
-            list.add(remote);
+            ImageModel imageModel = new ImageModel(i,remote);
+            list.add(imageModel);
+            i++;
             cursor.moveToNext();
         }
         cursor.close();
@@ -105,13 +93,13 @@ public class ZGallery extends GridView {
 
     private class Adapter extends BaseAdapter {
 
-        private List<String> images;
+        private ArrayList<ImageModel> images;
         private LayoutInflater layoutInflater;
 
         private ImageWork mImageWork;
         private int mImageThumbSize;
 
-        public Adapter(Context context,List<String> images) {
+        public Adapter(Context context,ArrayList<ImageModel> images) {
             this.images = images;
             layoutInflater = LayoutInflater.from(context);
             mImageThumbSize = context.getResources().getDimensionPixelSize(R.dimen.image_thumbnail_size);
@@ -127,8 +115,7 @@ public class ZGallery extends GridView {
 
         @Override
         public Object getItem(int i) {
-            String path = images.get(i);
-            return path;
+            return images.get(i);
         }
 
         @Override
@@ -139,39 +126,63 @@ public class ZGallery extends GridView {
         @Override
         public View getView(int i, View view, ViewGroup viewGroup) {
             ViewHolder viewHolder;
-            String path = (String)getItem(i);
+            final ImageModel imageModel = (ImageModel)getItem(i);
+            String path = imageModel.getPath();
+            boolean checked = imageModel.getChecked();
             if(view == null){
                 viewHolder = new ViewHolder();
                 view = layoutInflater.inflate(R.layout.imageview,null);
                 viewHolder.imageView = (ImageView)view.findViewById(R.id.iv_imageView);
+                viewHolder.checkBox = (CheckBox)view.findViewById(R.id.cb_imageview);
                 view.setTag(viewHolder);
             }else{
                 viewHolder = (ViewHolder)view.getTag();
             }
-
+            viewHolder.checkBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton arg0, boolean arg1) {
+                    imageModel.setChecked(arg1);
+                    if(!selectImageList.contains(imageModel)&&arg1){
+                        addSelectImage(imageModel);
+                    }
+                }
+            });
+            viewHolder.checkBox.setChecked(checked);
             mImageWork.loadImage(path, viewHolder.imageView);
             return view;
         }
 
         class ViewHolder{
             ImageView imageView;
+            CheckBox checkBox;
         }
     }
 
+    public ArrayList<ImageModel> getImageList() {
+        if(imageList == null){
+            imageList = getLocalImagesPath();
+        }
+        return imageList;
+    }
+
+    public void setImageList(ArrayList<ImageModel> imageList) {
+        this.imageList = imageList;
+    }
+
     /**
-     * 添加已选图片路径
-     * @param path
+     * 添加已选图片
+     * @param imageModel
      */
-    public void addSelectImagePath(String path){
-        selectImagePathList.add(path);
+    private void addSelectImage(ImageModel imageModel){
+        selectImageList.add(imageModel);
     }
 
     /**
      * 获取已选择照片路径
      * @return
      */
-    public ArrayList<String> getSelectImagePathList() {
-        return selectImagePathList;
+    public ArrayList<ImageModel> getSelectImageList() {
+        return selectImageList;
     }
 
     public Boolean getTakePhoto() {
